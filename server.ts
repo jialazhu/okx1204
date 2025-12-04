@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors() as any);
 app.use(express.json() as any);
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(path.join(__dirname, 'dist')) as any);
 
 // --- Server State ---
 let config: AppConfig = { ...DEFAULT_CONFIG };
@@ -56,14 +56,15 @@ const runTradingLoop = async () => {
 
     // 2. AI Analysis Logic
     const now = Date.now();
-    // Analyze every 60 seconds
-    if (now - lastAnalysisTime < 60000) return;
+    // Analyze every 15 seconds (High Frequency for Ultra-Short Term)
+    // 之前是 60000 (1分钟)，现在改为 15000 (15秒) 以应对超短线
+    if (now - lastAnalysisTime < 15000) return;
 
     // Use setTimeout instead of setImmediate to avoid TS errors
     setTimeout(async () => {
         try {
             lastAnalysisTime = now;
-            addLog('INFO', '正在调用云端战神引擎...');
+            addLog('INFO', '正在调用云端战神引擎 (超短线模式)...');
             
             if (!marketData || !accountData) return;
 
@@ -142,6 +143,7 @@ const runTradingLoop = async () => {
 };
 
 // Start Loop
+// Check loop condition every 5 seconds (must be smaller than analysis interval)
 setInterval(runTradingLoop, 5000);
 
 // --- API Endpoints ---
