@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Settings, Play, Pause, RefreshCw, Activity, Zap, TrendingUp, AlertCircle, Terminal, Shield, Target, Brain, X, Eye, Flame, Cloud } from 'lucide-react';
-import { MarketDataCollection, AccountBalance, PositionData, AIDecision, SystemLog, AppConfig } from './types';
+import { MarketDataCollection, AccountContext, AIDecision, SystemLog, AppConfig } from './types';
 import { DEFAULT_CONFIG, INSTRUMENT_ID, CONTRACT_VAL_ETH } from './constants';
 import SettingsModal from './components/SettingsModal';
 import CandleChart from './components/CandleChart';
@@ -13,16 +13,12 @@ const App: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   
   const [marketData, setMarketData] = useState<MarketDataCollection | null>(null);
-  const [accountData, setAccountData] = useState<{balance: AccountBalance, position: PositionData | null} | null>(null);
+  const [accountData, setAccountData] = useState<AccountContext | null>(null);
   
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [latestDecision, setLatestDecision] = useState<AIDecision | null>(null);
 
-  const logsEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+  // Removed logsEndRef and auto-scroll effect based on user request
 
   // Poll Server Status
   const fetchStatus = useCallback(async () => {
@@ -167,54 +163,63 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Position Card */}
-          <div className={`bg-okx-card border rounded-xl p-5 relative overflow-hidden ${accountData?.position ? 'border-okx-primary' : 'border-okx-border'}`}>
-            {accountData?.position && <div className="absolute top-0 right-0 p-1 bg-okx-primary text-xs font-bold text-white rounded-bl-lg">持仓中</div>}
-            <div className="flex items-center gap-2 mb-4 text-white font-bold">
-               <Shield size={16} /> 账户持仓 (云端同步)
-            </div>
-            {accountData?.position ? (
-              <div className="space-y-3 text-sm">
-                 <div className="flex justify-between">
-                    <span className="text-okx-subtext">方向</span>
-                    <span className={`font-bold uppercase ${accountData.position.posSide === 'long' ? 'text-okx-up' : 'text-okx-down'}`}>
-                        {accountData.position.posSide}
-                    </span>
-                 </div>
-                 <div className="flex justify-between">
-                    <span className="text-okx-subtext">规模</span>
-                    <span className="text-white font-mono">{accountData.position.pos} 张</span>
-                 </div>
-                 <div className="flex justify-between border-t border-okx-border pt-2">
-                    <span className="text-okx-subtext">保证金</span>
-                    <span className="text-white font-mono">{accountData.position.margin} U</span>
-                 </div>
-                  <div className="flex justify-between">
-                    <span className="text-okx-subtext">持仓市值</span>
-                    <span className="text-white font-mono">{(parseFloat(accountData.position.pos) * CONTRACT_VAL_ETH * parseFloat(accountData.position.avgPx)).toLocaleString(undefined, {maximumFractionDigits:2})} U</span>
-                 </div>
-                 <div className="flex justify-between border-t border-okx-border pt-2">
-                    <span className="text-okx-subtext">未结盈亏</span>
-                    <span className={`font-mono font-bold ${parseFloat(accountData.position.upl) > 0 ? 'text-okx-up' : 'text-okx-down'}`}>
-                        {accountData.position.upl} U ({formatPct(accountData.position.uplRatio)})
-                    </span>
-                 </div>
-                 {(accountData.position.slTriggerPx || accountData.position.tpTriggerPx) && (
-                     <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-okx-border">
-                         <div className="bg-okx-bg p-1.5 rounded text-center">
-                             <div className="text-xs text-okx-subtext">止损 (SL)</div>
-                             <div className="text-xs font-mono text-red-400">{accountData.position.slTriggerPx || "--"}</div>
-                         </div>
-                         <div className="bg-okx-bg p-1.5 rounded text-center">
-                             <div className="text-xs text-okx-subtext">止盈 (TP)</div>
-                             <div className="text-xs font-mono text-green-400">{accountData.position.tpTriggerPx || "--"}</div>
-                         </div>
-                     </div>
-                 )}
-              </div>
-            ) : (
-                <div className="text-okx-subtext text-center text-sm py-4">空仓等待战机...</div>
-            )}
+          {/* Position Cards (Render All Positions) */}
+          <div className="space-y-3">
+             <div className="flex items-center gap-2 text-white font-bold text-sm px-1">
+                <Shield size={16} /> 账户持仓 ({accountData?.positions.length || 0})
+             </div>
+             
+             {accountData?.positions && accountData.positions.length > 0 ? (
+                accountData.positions.map((pos, idx) => (
+                    <div key={`${pos.instId}-${pos.posSide}-${idx}`} className={`bg-okx-card border rounded-xl p-5 relative overflow-hidden ${pos ? 'border-okx-primary' : 'border-okx-border'}`}>
+                        <div className="absolute top-0 right-0 p-1 bg-okx-primary text-xs font-bold text-white rounded-bl-lg">
+                            {pos.instId}
+                        </div>
+                        <div className="space-y-3 text-sm mt-2">
+                            <div className="flex justify-between">
+                                <span className="text-okx-subtext">方向</span>
+                                <span className={`font-bold uppercase ${pos.posSide === 'long' ? 'text-okx-up' : 'text-okx-down'}`}>
+                                    {pos.posSide}
+                                </span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-okx-subtext">规模</span>
+                                <span className="text-white font-mono">{pos.pos} 张</span>
+                            </div>
+                            <div className="flex justify-between border-t border-okx-border pt-2">
+                                <span className="text-okx-subtext">保证金</span>
+                                <span className="text-white font-mono">{pos.margin} U</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-okx-subtext">持仓市值</span>
+                                <span className="text-white font-mono">{(parseFloat(pos.pos) * CONTRACT_VAL_ETH * parseFloat(pos.avgPx)).toLocaleString(undefined, {maximumFractionDigits:2})} U</span>
+                            </div>
+                            <div className="flex justify-between border-t border-okx-border pt-2">
+                                <span className="text-okx-subtext">未结盈亏</span>
+                                <span className={`font-mono font-bold ${parseFloat(pos.upl) > 0 ? 'text-okx-up' : 'text-okx-down'}`}>
+                                    {pos.upl} U ({formatPct(pos.uplRatio)})
+                                </span>
+                            </div>
+                            {(pos.slTriggerPx || pos.tpTriggerPx) && (
+                                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-okx-border">
+                                    <div className="bg-okx-bg p-1.5 rounded text-center">
+                                        <div className="text-xs text-okx-subtext">止损 (SL)</div>
+                                        <div className="text-xs font-mono text-red-400">{pos.slTriggerPx || "--"}</div>
+                                    </div>
+                                    <div className="bg-okx-bg p-1.5 rounded text-center">
+                                        <div className="text-xs text-okx-subtext">止盈 (TP)</div>
+                                        <div className="text-xs font-mono text-green-400">{pos.tpTriggerPx || "--"}</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))
+             ) : (
+                <div className="bg-okx-card border border-okx-border rounded-xl p-6 text-okx-subtext text-center text-sm">
+                    空仓等待战机...
+                </div>
+             )}
           </div>
         </div>
 
@@ -300,7 +305,6 @@ const App: React.FC = () => {
                         </span>
                     </div>
                  ))}
-                 <div ref={logsEndRef} />
              </div>
           </div>
         </div>
