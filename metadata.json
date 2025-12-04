@@ -1,0 +1,5 @@
+{
+  "name": "ETH Rolling Trader Pro",
+  "description": "An intelligent ETH/USDT isolated margin trading system using OKX V5 data and AI-driven decision making with auto-rolling capabilities.",
+  "requestFramePermissions": []
+}
