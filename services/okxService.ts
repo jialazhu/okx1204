@@ -1,4 +1,5 @@
-import { AccountBalance, CandleData, MarketDataCollection, PositionData, TickerData, AIDecision } from "../types";
+
+import { AccountBalance, CandleData, MarketDataCollection, PositionData, TickerData, AIDecision, AccountContext } from "../types";
 import { INSTRUMENT_ID, MOCK_TICKER, CONTRACT_VAL_ETH } from "../constants";
 import CryptoJS from 'crypto-js';
 
@@ -81,7 +82,7 @@ const fetchAlgoOrders = async (config: any): Promise<any[]> => {
     }
 };
 
-export const fetchAccountData = async (config: any): Promise<{ balance: AccountBalance; position: PositionData | null }> => {
+export const fetchAccountData = async (config: any): Promise<AccountContext> => {
   if (config.isSimulation) {
     return generateMockAccountData();
   }
@@ -92,6 +93,7 @@ export const fetchAccountData = async (config: any): Promise<{ balance: AccountB
     const balRes = await fetch(BASE_URL + balPath, { method: 'GET', headers: balHeaders });
     const balJson = await balRes.json();
 
+    // Fetch positions for the specific instrument, or remove instId param to fetch all
     const posPath = `/api/v5/account/positions?instId=${INSTRUMENT_ID}`;
     const posHeaders = getHeaders('GET', posPath, '', config);
     const posRes = await fetch(BASE_URL + posPath, { method: 'GET', headers: posHeaders });
@@ -101,33 +103,35 @@ export const fetchAccountData = async (config: any): Promise<{ balance: AccountB
     
     const balanceData = balJson.data?.[0]?.details?.[0]; 
     
-    let position: PositionData | null = null;
+    let positions: PositionData[] = [];
     
     if (posJson.data && posJson.data.length > 0) {
-        const rawPos = posJson.data[0];
-        position = {
-            instId: rawPos.instId,
-            posSide: rawPos.posSide,
-            pos: rawPos.pos,
-            avgPx: rawPos.avgPx,
-            upl: rawPos.upl,
-            uplRatio: rawPos.uplRatio,
-            mgnMode: rawPos.mgnMode,
-            margin: rawPos.margin,
-            liqPx: rawPos.liqPx,
-            cTime: rawPos.cTime
-        };
-
-        // Fetch Algo Orders to enrich position data with SL/TP info
         const algoOrders = await fetchAlgoOrders(config);
-        if (algoOrders.length > 0) {
-             // Find SL order
-             const slOrder = algoOrders.find((o: any) => o.slTriggerPx && parseFloat(o.slTriggerPx) > 0);
-             const tpOrder = algoOrders.find((o: any) => o.tpTriggerPx && parseFloat(o.tpTriggerPx) > 0);
-             
-             if (slOrder) position.slTriggerPx = slOrder.slTriggerPx;
-             if (tpOrder) position.tpTriggerPx = tpOrder.tpTriggerPx;
-        }
+        
+        positions = posJson.data.map((rawPos: any) => {
+            const position: PositionData = {
+                instId: rawPos.instId,
+                posSide: rawPos.posSide,
+                pos: rawPos.pos,
+                avgPx: rawPos.avgPx,
+                upl: rawPos.upl,
+                uplRatio: rawPos.uplRatio,
+                mgnMode: rawPos.mgnMode,
+                margin: rawPos.margin,
+                liqPx: rawPos.liqPx,
+                cTime: rawPos.cTime
+            };
+            
+             // Find SL/TP orders specific to this position side
+             if (algoOrders.length > 0) {
+                 const slOrder = algoOrders.find((o: any) => o.instId === rawPos.instId && o.posSide === rawPos.posSide && o.slTriggerPx && parseFloat(o.slTriggerPx) > 0);
+                 const tpOrder = algoOrders.find((o: any) => o.instId === rawPos.instId && o.posSide === rawPos.posSide && o.tpTriggerPx && parseFloat(o.tpTriggerPx) > 0);
+                 
+                 if (slOrder) position.slTriggerPx = slOrder.slTriggerPx;
+                 if (tpOrder) position.tpTriggerPx = tpOrder.tpTriggerPx;
+             }
+             return position;
+        });
     }
     
     return {
@@ -136,7 +140,7 @@ export const fetchAccountData = async (config: any): Promise<{ balance: AccountB
         availEq: balanceData?.availEq || "0",
         uTime: balJson.data?.[0]?.uTime || Date.now().toString()
       },
-      position
+      positions
     };
 
   } catch (error: any) {
@@ -457,13 +461,13 @@ function generateMockMarketData(): MarketDataCollection {
   };
 }
 
-function generateMockAccountData() {
+function generateMockAccountData(): AccountContext {
   return {
     balance: {
       totalEq: "15.00", // Start with 15U to simulate Stage 1
       availEq: "15.00",
       uTime: Date.now().toString(),
     },
-    position: null
+    positions: []
   };
 }
