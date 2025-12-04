@@ -8,6 +8,15 @@ const randomVariation = (base: number, percent: number) => {
 
 const BASE_URL = "https://www.okx.com";
 
+// Helper: Format Price to 2 decimal places (ETH standard tick size)
+// Fixes 'Parameter tpTriggerPx error' caused by excess precision
+const formatPx = (price: string | number | undefined | null): string | undefined => {
+    if (price === undefined || price === null || price === '') return undefined;
+    const p = parseFloat(price.toString());
+    if (isNaN(p) || p <= 0) return undefined;
+    return p.toFixed(2);
+};
+
 const signRequest = (method: string, requestPath: string, body: string = '', secretKey: string) => {
   const timestamp = new Date().toISOString();
   const message = timestamp + method + requestPath + body;
@@ -120,7 +129,6 @@ export const fetchAccountData = async (config: any): Promise<AccountContext> => 
                 cTime: rawPos.cTime
             };
             
-             // Find SL/TP orders specific to this position side
              if (algoOrders.length > 0) {
                  const slOrder = algoOrders.find((o: any) => o.instId === rawPos.instId && o.posSide === rawPos.posSide && o.slTriggerPx && parseFloat(o.slTriggerPx) > 0);
                  const tpOrder = algoOrders.find((o: any) => o.instId === rawPos.instId && o.posSide === rawPos.posSide && o.tpTriggerPx && parseFloat(o.tpTriggerPx) > 0);
@@ -250,12 +258,10 @@ export const executeOrder = async (order: AIDecision, config: any): Promise<any>
         sz: sizeStr
     };
     
-    const tpPrice = order.trading_decision?.profit_target;
-    const slPrice = order.trading_decision?.stop_loss;
-    const cleanPrice = (p: string | undefined) => p && !isNaN(parseFloat(p)) && parseFloat(p) > 0 ? p : null;
-
-    const validTp = cleanPrice(tpPrice);
-    const validSl = cleanPrice(slPrice);
+    // Validate and Format TP/SL
+    // Use formatPx to ensure "3000.12345" becomes "3000.12" to avoid 51000 error
+    const validTp = formatPx(order.trading_decision?.profit_target);
+    const validSl = formatPx(order.trading_decision?.stop_loss);
 
     if (validTp || validSl) {
         const algoOrder: any = {};
@@ -298,38 +304,30 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
     }
 
     try {
-        // 1. Fetch existing algo orders
         const pendingAlgos = await fetchAlgoOrders(config);
         
+        const ordersToCancel: any[] = [];
+        
+        // Strict format logic
+        const finalSl = formatPx(slPrice);
+        const finalTp = formatPx(tpPrice);
+
         const isSL = (o: any) => o.slTriggerPx && parseFloat(o.slTriggerPx) > 0;
         const isTP = (o: any) => o.tpTriggerPx && parseFloat(o.tpTriggerPx) > 0;
 
-        const ordersToCancel: any[] = [];
-
-        // 2. Identify cancellations based on what we are updating
-        // Only cancel SLs if we are setting a new SL. Otherwise keep old SL.
-        if (slPrice) {
-            const sls = pendingAlgos.filter((o: any) => 
-                o.instId === instId && 
-                o.posSide === posSide && 
-                isSL(o)
-            );
+        // Cancel old orders only if we are replacing them
+        if (finalSl) {
+            const sls = pendingAlgos.filter((o: any) => o.instId === instId && o.posSide === posSide && isSL(o));
             ordersToCancel.push(...sls.map(o => ({ algoId: o.algoId, instId })));
         }
 
-        // Only cancel TPs if we are setting a new TP. Otherwise keep old TP.
-        if (tpPrice) {
-            const tps = pendingAlgos.filter((o: any) => 
-                o.instId === instId && 
-                o.posSide === posSide && 
-                isTP(o)
-            );
+        if (finalTp) {
+            const tps = pendingAlgos.filter((o: any) => o.instId === instId && o.posSide === posSide && isTP(o));
             ordersToCancel.push(...tps.map(o => ({ algoId: o.algoId, instId })));
         }
 
         if (ordersToCancel.length > 0) {
             const cancelPath = "/api/v5/trade/cancel-algos";
-            // Deduplicate
             const uniqueCancel = Array.from(new Set(ordersToCancel.map(a => a.algoId)))
                 .map(id => ordersToCancel.find(a => a.algoId === id));
                 
@@ -339,13 +337,11 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
             console.log(`[TPSL] Cancelled ${uniqueCancel.length} old algo orders.`);
         }
 
-        // 3. Place new Algo Orders
-        if (!slPrice && !tpPrice) return { code: "0", msg: "无新的止盈止损价格，保留原样" };
+        if (!finalSl && !finalTp) return { code: "0", msg: "无新的止盈止损价格，保留原样" };
 
         const path = "/api/v5/trade/order-algo";
         
-        // Place SL
-        if (slPrice) {
+        if (finalSl) {
             const slBody = JSON.stringify({
                 instId,
                 posSide,
@@ -354,7 +350,7 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
                 ordType: 'conditional',
                 sz: size, 
                 reduceOnly: true,
-                slTriggerPx: slPrice,
+                slTriggerPx: finalSl,
                 slOrdPx: '-1'
             });
             const slHeaders = getHeaders('POST', path, slBody, config);
@@ -363,8 +359,7 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
             if (slJson.code !== '0') throw new Error(`设置止损失败: ${slJson.msg}`);
         }
 
-        // Place TP
-        if (tpPrice) {
+        if (finalTp) {
              const tpBody = JSON.stringify({
                 instId,
                 posSide,
@@ -373,7 +368,7 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
                 ordType: 'conditional',
                 sz: size,
                 reduceOnly: true,
-                tpTriggerPx: tpPrice,
+                tpTriggerPx: finalTp,
                 tpOrdPx: '-1'
             });
             const tpHeaders = getHeaders('POST', path, tpBody, config);
