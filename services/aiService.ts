@@ -198,7 +198,6 @@ export const getTradingDecision = async (
 
   // 趋势
   const ema20 = calcEMA(closes, 20);
-  const ema50 = calcEMA(closes, 50);
   const macdData = calcMACD(closes);
   const macdSignalStr = macdData.hist > 0 ? "多头趋势 (MACD > Signal)" : "空头趋势 (MACD < Signal)";
   
@@ -284,7 +283,7 @@ export const getTradingDecision = async (
       if (netPnL <= 0) {
           // --- 亏损风控逻辑 (Loss Risk Control) ---
           const isTrendAligned = isLong 
-              ? (currentPrice > ema20 && macdData.hist > -5) // 价格仍在EMA20上方或MACD未深度死叉
+              ? (currentPrice > ema20 && macdData.hist > -5) 
               : (currentPrice < ema20 && macdData.hist < 5);
           
           // DCA 补仓判断
@@ -294,17 +293,15 @@ export const getTradingDecision = async (
           const maxPosRatio = (currentStageParams as any).max_pos_ratio || 2.0;
           const hasSpaceForDCA = currentPosRatio < maxPosRatio;
           
-          // 计算亏损幅度
           const drawdownPct = Math.abs((currentPrice - avgPx) / avgPx) * 100;
 
           if (isTrendAligned) {
               if (canDCA && hasSpaceForDCA && drawdownPct > 1.5 && drawdownPct < 8) {
-                  // A1: 趋势良好但回调，且有仓位空间 -> 建议补仓
                   profitLockStage = "A1: 良性回调 (建议补仓 DCA)";
                   dcaSuggestion = isLong 
                       ? `建议 BUY (加仓) ${posSize * 0.5} 张，摊低成本`
                       : `建议 SELL (加仓) ${posSize * 0.5} 张，摊低成本`;
-                  recommendedSL = 0; // 暂不设紧止损，等待补仓拉均价
+                  recommendedSL = 0; 
               } else {
                   profitLockStage = "A1: 正常震荡 (HOLD)";
                   dcaSuggestion = "暂不补仓 (幅度不够或仓位已满)";
@@ -313,7 +310,6 @@ export const getTradingDecision = async (
           } else {
               profitLockStage = "A2: 趋势转弱 (风控预警)";
               dcaSuggestion = "禁止补仓 (趋势破坏)";
-              // 收紧止损
               recommendedSL = isLong 
                   ? Math.max(parseFloat(p.slTriggerPx || "0"), currentPrice * 0.99) 
                   : Math.min(parseFloat(p.slTriggerPx || "999999"), currentPrice * 1.01); 
@@ -407,29 +403,32 @@ ${marketDataBlock}
 
 **三、核心决策指令 (HIGHEST PRIORITY: RISK, DCA & PROFIT)**:
 
-1. **亏损补仓机制 (Strategic DCA - 仅在 A1 阶段)**:
-   - **条件**: 如果【风控与操作建议】中明确提示 "建议补仓 (DCA)"。
-   - **逻辑**: 这意味着虽然当前浮亏，但技术趋势（如EMA20支撑）依然完好，且仓位未满。
-   - **执行**: 请输出 **Action: BUY** (若多单) 或 **SELL** (若空单)，仓位大小参考建议值（通常是原仓位的0.5-1.0倍）。
-   - **注意**: 补仓后 **不需要** 立即设置极窄的止损，给市场一点呼吸空间，但必须关注大趋势。
+1. **首次开仓风控 (Initial SL Rule)**:
+   - **绝对红线**: 首次开仓时设置的止损价，**绝不允许导致超过保证金 20% 的净亏损**。
+   - **计算逻辑**: 如果你 Action 是 BUY/SELL，请务必计算 stop_loss，确保 `|Entry - SL| / Entry * Leverage < 0.2`。
+   - 如果技术面要求的止损位过宽（亏损会超过20%），则 **放弃开仓 (HOLD)** 或 **降低仓位**。
 
-2. **趋势破坏风控 (Stop Loss - A2/A3 阶段)**:
+2. **亏损补仓机制 (Strategic DCA - 仅在 A1 阶段)**:
+   - **条件**: 如果【风控与操作建议】中明确提示 "建议补仓 (DCA)"。
+   - **执行**: Action: BUY (若多单) 或 SELL (若空单)。
+   - **注意**: 补仓后 **不需要** 立即设置极窄的止损。
+
+3. **趋势破坏风控 (Stop Loss - A2/A3 阶段)**:
    - **条件**: 如果【风控与操作建议】提示 "趋势转弱" 或 "禁止补仓"。
    - **执行**: 严禁补仓。必须执行 **UPDATE_TPSL** 收紧止损，或者直接 **CLOSE** 离场。保住本金是第一要务。
 
-3. **利润保护机制 (Profit Locking - B/C/D 阶段)**:
+4. **利润保护机制 (Profit Locking - B/C/D 阶段)**:
    - **执行**: 如果净收益为正，请严格按照【推荐新止损】执行 **UPDATE_TPSL**。严禁回调止损。
 
-4. **实时联网搜索 (ONLINE SEARCH)**:
+5. **实时联网搜索 (ONLINE SEARCH)**:
    - **指令**: 立即搜索全网 Crypto 热点 (6h/24h)。
    - **判断**: 如果出现突发重大利空，忽略所有补仓信号，立即清仓。
 
-5. **交易执行**:
+6. **交易执行**:
    - **Action**: BUY / SELL / HOLD / CLOSE / UPDATE_TPSL
-   - **补仓指令**: 如果决定补仓，Action 填 BUY/SELL，size 填具体数量。
    - **Stop Loss**: 
       - 如果是 UPDATE_TPSL，填入推荐值。
-      - 如果是开新仓或补仓，必须填入逻辑止损（如均线下方）。
+      - 如果是开新仓或补仓，必须填入逻辑止损（如均线下方），且必须满足 <20% 亏损限制。
 
 请生成纯净的 JSON 格式交易决策。
 `;
@@ -446,7 +445,7 @@ ${marketDataBlock}
       "position_size": "动态计算 (张数或U)",
       "leverage": "${currentStageParams.leverage}",
       "profit_target": "价格",
-      "stop_loss": "价格",
+      "stop_loss": "价格 (注意 <20% 亏损限制)",
       "invalidation_condition": "..."
     },
     "reasoning": "..."
@@ -456,7 +455,7 @@ ${marketDataBlock}
   try {
     const text = await callDeepSeek(apiKey, [
         { role: "system", content: systemPrompt + "\nJSON ONLY, NO MARKDOWN:\n" + responseSchema },
-        { role: "user", content: "请调用你的搜索能力获取实时数据，并根据【亏损补仓】和【利润保护】逻辑给出指令。" }
+        { role: "user", content: "请调用你的搜索能力获取实时数据，并根据【亏损补仓】、【利润保护】及【首单风控】逻辑给出指令。" }
     ]);
 
     if (!text) throw new Error("AI 返回为空");
@@ -478,7 +477,7 @@ ${marketDataBlock}
     const confidence = parseFloat(decision.trading_decision.confidence) || 50;
     const safeLeverage = isNaN(leverage) ? currentStageParams.leverage : leverage;
     
-    // Robust Sizing Logic (Updated for DCA)
+    // Robust Sizing Logic
     let targetMargin = availableEquity * currentStageParams.risk_factor * (confidence / 100);
     const maxSafeMargin = availableEquity * 0.95; 
     let finalMargin = Math.min(targetMargin, maxSafeMargin);
@@ -486,12 +485,46 @@ ${marketDataBlock}
     const MIN_OPEN_VALUE = 100;
     let positionValue = finalMargin * safeLeverage;
 
-    // 自动修正逻辑：如果钱不够 100U 名义价值，但属于 Stage 1 且置信度高，尝试用最大余额
+    // 自动修正逻辑
     if (positionValue < MIN_OPEN_VALUE && availableEquity * 0.9 * safeLeverage > MIN_OPEN_VALUE) {
         if (confidence >= 40) {
              finalMargin = MIN_OPEN_VALUE / safeLeverage;
              positionValue = MIN_OPEN_VALUE;
              console.log(`[AI] 仓位自动修正: 提升至最小名义价值 ${MIN_OPEN_VALUE} USDT`);
+        }
+    }
+
+    // --- 强制风控检查 (Max SL Distance) ---
+    // Rule: SL cannot exceed 20% loss of margin
+    if (decision.action === 'BUY' || decision.action === 'SELL') {
+        const proposedSL = parseFloat(decision.trading_decision.stop_loss);
+        if (!isNaN(proposedSL) && proposedSL > 0) {
+            // Max allowed price deviation = 20% / Leverage
+            // e.g., 100x leverage -> max deviation = 0.20 / 100 = 0.002 (0.2%)
+            const maxDeviationPct = 0.20 / safeLeverage; 
+            
+            let safeSL = proposedSL;
+            let corrected = false;
+
+            if (decision.action === 'BUY') {
+                const limitPrice = currentPrice * (1 - maxDeviationPct);
+                if (proposedSL < limitPrice) {
+                    safeSL = limitPrice;
+                    corrected = true;
+                }
+            } else { // SELL
+                const limitPrice = currentPrice * (1 + maxDeviationPct);
+                if (proposedSL > limitPrice) {
+                    safeSL = limitPrice;
+                    corrected = true;
+                }
+            }
+
+            if (corrected) {
+                console.warn(`[Risk Control] AI SL ${proposedSL} too loose. Adjusted to ${safeSL.toFixed(2)} (Max 20% margin loss).`);
+                decision.trading_decision.stop_loss = safeSL.toFixed(2);
+                decision.reasoning += ` [系统修正: 止损已强制收紧至 ${safeSL.toFixed(2)} 以控制本金亏损 <20%]`;
+            }
         }
     }
 
@@ -502,18 +535,10 @@ ${marketDataBlock}
              decision.size = "0";
              decision.reasoning += ` [系统修正: 资金不足以满足最小开仓门槛]`;
         } else {
-            // 如果是补仓，AI 可能会返回 position_size，我们尽量尊重它，但不能超过最大限制
             let rawSize = parseFloat(decision.trading_decision.position_size || "0");
             const calcSize = positionValue / (CONTRACT_VAL_ETH * currentPrice);
             
-            // 如果 AI 返回的 size 合理（不是0，且不超过计算出的风控上限），使用 AI 的建议（用于DCA）
-            // 否则使用基于 risk_factor 计算出的 calcSize
-            // 注意：AI 返回的 position_size 单位可能是 U 也可能是张，这里做一个简单的判断
-            // 假设 AI 遵循 prompt 输出 "张数" 或 "U" (我们在 Prompt 说是动态计算)
-            // 简单起见，我们优先信任基于 availableEquity 的 calcSize 作为上限
-            
             let finalSize = calcSize;
-            // 如果 AI 明确说了要买多少张 (通常较小用于补仓)，且小于上限，则采纳
             if (rawSize > 0 && rawSize < calcSize) {
                 finalSize = rawSize;
             }
