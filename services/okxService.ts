@@ -1,3 +1,4 @@
+
 import { AccountBalance, CandleData, MarketDataCollection, PositionData, TickerData, AIDecision, AccountContext } from "../types";
 import { INSTRUMENT_ID, MOCK_TICKER, CONTRACT_VAL_ETH } from "../constants";
 import CryptoJS from 'crypto-js';
@@ -7,14 +8,6 @@ const randomVariation = (base: number, percent: number) => {
 };
 
 const BASE_URL = "https://www.okx.com";
-
-// Helper: Format Price to 2 decimal places (ETH standard tick size)
-const formatPx = (price: string | number | undefined | null): string | undefined => {
-    if (price === undefined || price === null || price === '') return undefined;
-    const p = parseFloat(price.toString());
-    if (isNaN(p) || p <= 0) return undefined;
-    return p.toFixed(2);
-};
 
 const signRequest = (method: string, requestPath: string, body: string = '', secretKey: string) => {
   const timestamp = new Date().toISOString();
@@ -36,34 +29,25 @@ const getHeaders = (method: string, requestPath: string, body: string = '', conf
   };
 };
 
-const getPublicHeaders = () => {
-  return {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json'
-  };
-};
-
 export const fetchMarketData = async (config: any): Promise<MarketDataCollection> => {
   if (config.isSimulation) {
     return generateMockMarketData();
   }
 
   try {
-    const publicHeaders = getPublicHeaders();
-
-    const tickerRes = await fetch(`${BASE_URL}/api/v5/market/ticker?instId=${INSTRUMENT_ID}`, { headers: publicHeaders });
+    const tickerRes = await fetch(`${BASE_URL}/api/v5/market/ticker?instId=${INSTRUMENT_ID}`);
     const tickerJson = await tickerRes.json();
     
-    const candles5mRes = await fetch(`${BASE_URL}/api/v5/market/candles?instId=${INSTRUMENT_ID}&bar=5m&limit=50`, { headers: publicHeaders });
+    const candles5mRes = await fetch(`${BASE_URL}/api/v5/market/candles?instId=${INSTRUMENT_ID}&bar=5m&limit=50`);
     const candles5mJson = await candles5mRes.json();
     
-    const candles15mRes = await fetch(`${BASE_URL}/api/v5/market/candles?instId=${INSTRUMENT_ID}&bar=15m&limit=100`, { headers: publicHeaders });
+    const candles15mRes = await fetch(`${BASE_URL}/api/v5/market/candles?instId=${INSTRUMENT_ID}&bar=15m&limit=100`);
     const candles15mJson = await candles15mRes.json();
 
-    const fundingRes = await fetch(`${BASE_URL}/api/v5/public/funding-rate?instId=${INSTRUMENT_ID}`, { headers: publicHeaders });
+    const fundingRes = await fetch(`${BASE_URL}/api/v5/public/funding-rate?instId=${INSTRUMENT_ID}`);
     const fundingJson = await fundingRes.json();
     
-    const oiRes = await fetch(`${BASE_URL}/api/v5/public/open-interest?instId=${INSTRUMENT_ID}`, { headers: publicHeaders });
+    const oiRes = await fetch(`${BASE_URL}/api/v5/public/open-interest?instId=${INSTRUMENT_ID}`);
     const oiJson = await oiRes.json();
 
     if (tickerJson.code !== '0') throw new Error(`OKX API Error (Ticker): ${tickerJson.msg}`);
@@ -72,8 +56,8 @@ export const fetchMarketData = async (config: any): Promise<MarketDataCollection
       ticker: tickerJson.data[0],
       candles5m: formatCandles(candles5mJson.data),
       candles15m: formatCandles(candles15mJson.data),
-      fundingRate: fundingJson.data?.[0]?.fundingRate || "0",
-      openInterest: oiJson.data?.[0]?.oi || "0",
+      fundingRate: fundingJson.data[0]?.fundingRate || "0",
+      openInterest: oiJson.data[0]?.oi || "0",
       orderbook: {}, 
       trades: [],
     };
@@ -109,6 +93,7 @@ export const fetchAccountData = async (config: any): Promise<AccountContext> => 
     const balRes = await fetch(BASE_URL + balPath, { method: 'GET', headers: balHeaders });
     const balJson = await balRes.json();
 
+    // Fetch positions for the specific instrument, or remove instId param to fetch all
     const posPath = `/api/v5/account/positions?instId=${INSTRUMENT_ID}`;
     const posHeaders = getHeaders('GET', posPath, '', config);
     const posRes = await fetch(BASE_URL + posPath, { method: 'GET', headers: posHeaders });
@@ -129,7 +114,7 @@ export const fetchAccountData = async (config: any): Promise<AccountContext> => 
                 posSide: rawPos.posSide,
                 pos: rawPos.pos,
                 avgPx: rawPos.avgPx,
-                breakEvenPx: rawPos.breakEvenPx, // NEW field
+                breakEvenPx: rawPos.breakEvenPx, // Map Exchange Breakeven Price
                 upl: rawPos.upl,
                 uplRatio: rawPos.uplRatio,
                 mgnMode: rawPos.mgnMode,
@@ -138,6 +123,7 @@ export const fetchAccountData = async (config: any): Promise<AccountContext> => 
                 cTime: rawPos.cTime
             };
             
+             // Find SL/TP orders specific to this position side
              if (algoOrders.length > 0) {
                  const slOrder = algoOrders.find((o: any) => o.instId === rawPos.instId && o.posSide === rawPos.posSide && o.slTriggerPx && parseFloat(o.slTriggerPx) > 0);
                  const tpOrder = algoOrders.find((o: any) => o.instId === rawPos.instId && o.posSide === rawPos.posSide && o.tpTriggerPx && parseFloat(o.tpTriggerPx) > 0);
@@ -164,6 +150,7 @@ export const fetchAccountData = async (config: any): Promise<AccountContext> => 
   }
 };
 
+// Helper to set leverage before order
 const setLeverage = async (instId: string, lever: string, posSide: string, config: any) => {
     if (config.isSimulation) return;
     
@@ -184,6 +171,7 @@ const setLeverage = async (instId: string, lever: string, posSide: string, confi
     return json;
 };
 
+// Ensure account is in Long/Short mode
 const ensureLongShortMode = async (config: any) => {
     if (config.isSimulation) return;
     const path = "/api/v5/account/config";
@@ -193,6 +181,7 @@ const ensureLongShortMode = async (config: any) => {
     
     if (json.code === '0' && json.data && json.data[0]) {
         if (json.data[0].posMode !== 'long_short_mode') {
+            console.log("Current posMode:", json.data[0].posMode, "Switching to long_short_mode...");
             const setPath = "/api/v5/account/set-position-mode";
             const setBody = JSON.stringify({ posMode: 'long_short_mode' });
             const setHeaders = getHeaders('POST', setPath, setBody, config);
@@ -212,42 +201,67 @@ export const executeOrder = async (order: AIDecision, config: any): Promise<any>
   }
   
   try {
+    // 0. Ensure Position Mode is correct
     try {
         await ensureLongShortMode(config);
     } catch (e: any) {
         console.warn("Position Mode Check Failed:", e.message);
+        // Continue but warn
     }
 
     if (order.action === 'CLOSE') {
         const closePath = "/api/v5/trade/close-position";
-        const closeLongBody = JSON.stringify({ instId: INSTRUMENT_ID, posSide: 'long', mgnMode: 'isolated' });
+        
+        // 1. 尝试平多单 (Try Closing LONG)
+        const closeLongBody = JSON.stringify({
+            instId: INSTRUMENT_ID,
+            posSide: 'long', 
+            mgnMode: 'isolated'
+        });
         const headersLong = getHeaders('POST', closePath, closeLongBody, config);
         const resLong = await fetch(BASE_URL + closePath, { method: 'POST', headers: headersLong, body: closeLongBody });
         const jsonLong = await resLong.json();
-        if (jsonLong.code === '0') return jsonLong; 
         
-        const closeShortBody = JSON.stringify({ instId: INSTRUMENT_ID, posSide: 'short', mgnMode: 'isolated' });
+        if (jsonLong.code === '0') return jsonLong; // 成功
+        
+        // 2. 如果平多单失败，尝试平空单 (Try Closing SHORT)
+        const closeShortBody = JSON.stringify({ 
+            instId: INSTRUMENT_ID, 
+            posSide: 'short', 
+            mgnMode: 'isolated' 
+        });
         const headersShort = getHeaders('POST', closePath, closeShortBody, config);
         const resShort = await fetch(BASE_URL + closePath, { method: 'POST', headers: headersShort, body: closeShortBody });
         const jsonShort = await resShort.json();
-        if (jsonShort.code === '0') return jsonShort;
 
+        if (jsonShort.code === '0') return jsonShort; // 成功
+
+        // 3. 如果都失败，抛出详细错误 (Both failed)
+        // 优先显示非“仓位不存在”的错误，或者合并显示
         const longMsg = jsonLong.code === '51000' || jsonLong.msg.includes('不存在') ? '多单不存在' : jsonLong.msg;
         const shortMsg = jsonShort.code === '51000' || jsonShort.msg.includes('不存在') ? '空单不存在' : jsonShort.msg;
         
         throw new Error(`平仓失败 (多: ${longMsg}, 空: ${shortMsg})`);
     }
 
+    // --- BUY / SELL ---
+    
+    // 1. Determine Position Side
     const posSide = order.action === 'BUY' ? 'long' : 'short';
     const side = order.action === 'BUY' ? 'buy' : 'sell';
 
+    // 2. Set Leverage First (Crucial for V5)
+    // V5 trade/order does NOT accept 'lever' param. It uses account setting.
     try {
         await setLeverage(INSTRUMENT_ID, order.leverage || "50", posSide, config);
     } catch (e: any) {
         throw new Error(`无法设置战神策略杠杆: ${e.message}`);
     }
 
+    // 3. Prepare Order with Attached Algo Orders (TP/SL)
     const path = "/api/v5/trade/order";
+    
+    // Validate Size
     let sizeFloat = 0;
     try {
         sizeFloat = parseFloat(order.size);
@@ -266,30 +280,38 @@ export const executeOrder = async (order: AIDecision, config: any): Promise<any>
         sz: sizeStr
     };
     
-    const validTp = formatPx(order.trading_decision?.profit_target);
-    const validSl = formatPx(order.trading_decision?.stop_loss);
+    // Attach TP/SL (attachAlgoOrds)
+    const tpPrice = order.trading_decision?.profit_target;
+    const slPrice = order.trading_decision?.stop_loss;
+    const cleanPrice = (p: string | undefined) => p && !isNaN(parseFloat(p)) && parseFloat(p) > 0 ? p : null;
+
+    const validTp = cleanPrice(tpPrice);
+    const validSl = cleanPrice(slPrice);
 
     if (validTp || validSl) {
         const algoOrder: any = {};
         if (validTp) {
             algoOrder.tpTriggerPx = validTp;
-            algoOrder.tpOrdPx = '-1'; 
+            algoOrder.tpOrdPx = '-1'; // Market close
         }
         if (validSl) {
             algoOrder.slTriggerPx = validSl;
-            algoOrder.slOrdPx = '-1'; 
+            algoOrder.slOrdPx = '-1'; // Market close
         }
         bodyObj.attachAlgoOrds = [algoOrder];
     }
     
     const requestBody = JSON.stringify(bodyObj);
     const headers = getHeaders('POST', path, requestBody, config);
+    
     const response = await fetch(BASE_URL + path, { method: 'POST', headers: headers, body: requestBody });
     const json = await response.json();
 
     if (json.code !== '0') {
         let errorMsg = `Code ${json.code}: ${json.msg}`;
+        // Append data detail for debugging
         if (json.data) errorMsg += ` (Data: ${JSON.stringify(json.data)})`;
+
         if (json.code === '51008') {
             errorMsg = "余额不足 (51008): 账户资金无法支付当前开仓保证金及手续费，系统将尝试降低仓位重试。";
         }
@@ -310,43 +332,48 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
     }
 
     try {
-        const finalSl = formatPx(slPrice);
-        const finalTp = formatPx(tpPrice);
-
-        if (!finalSl && !finalTp) return { code: "0", msg: "无新的止盈止损价格，跳过更新" };
-
+        // 1. Fetch existing algo orders
         const pendingAlgos = await fetchAlgoOrders(config);
         
-        // Step 1: Place NEW Algo Orders First
-        const path = "/api/v5/trade/order-algo";
-        let slSuccess = false;
-        let tpSuccess = false;
+        // 2. Cancel existing SL/TP orders for this instrument/posSide
+        const toCancel = pendingAlgos
+            .filter((o: any) => o.instId === instId && o.posSide === posSide)
+            .map((o: any) => ({ algoId: o.algoId, instId }));
 
-        if (finalSl) {
+        if (toCancel.length > 0) {
+            const cancelPath = "/api/v5/trade/cancel-algos";
+            const cancelBody = JSON.stringify(toCancel);
+            const headers = getHeaders('POST', cancelPath, cancelBody, config);
+            await fetch(BASE_URL + cancelPath, { method: 'POST', headers: headers, body: cancelBody });
+            console.log(`Cancelled ${toCancel.length} old algo orders.`);
+        }
+
+        // 3. Place new Algo Order (Conditional Close)
+        if (!slPrice && !tpPrice) return { code: "0", msg: "无新的止盈止损价格" };
+
+        const path = "/api/v5/trade/order-algo";
+        // NOTE: ordType must be 'conditional' for separate SL/TP algo orders.
+        // We must provide 'sz' and 'reduceOnly: true'.
+        
+        if (slPrice) {
             const slBody = JSON.stringify({
                 instId,
                 posSide,
                 tdMode: 'isolated',
-                side: posSide === 'long' ? 'sell' : 'buy',
+                side: posSide === 'long' ? 'sell' : 'buy', // Close Long = Sell
                 ordType: 'conditional',
                 sz: size, 
                 reduceOnly: true,
-                slTriggerPx: finalSl,
-                slOrdPx: '-1'
+                slTriggerPx: slPrice,
+                slOrdPx: '-1' // Market Close
             });
             const slHeaders = getHeaders('POST', path, slBody, config);
             const slRes = await fetch(BASE_URL + path, { method: 'POST', headers: slHeaders, body: slBody });
             const slJson = await slRes.json();
-            
-            if (slJson.code === '0') {
-                slSuccess = true;
-                console.log(`[TPSL] New SL placed at ${finalSl}`);
-            } else {
-                throw new Error(`设置新止损失败 (取消操作): ${slJson.msg}`);
-            }
+            if (slJson.code !== '0') throw new Error(`设置止损失败: ${slJson.msg}`);
         }
 
-        if (finalTp) {
+        if (tpPrice) {
              const tpBody = JSON.stringify({
                 instId,
                 posSide,
@@ -355,49 +382,16 @@ export const updatePositionTPSL = async (instId: string, posSide: 'long' | 'shor
                 ordType: 'conditional',
                 sz: size,
                 reduceOnly: true,
-                tpTriggerPx: finalTp,
+                tpTriggerPx: tpPrice,
                 tpOrdPx: '-1'
             });
             const tpHeaders = getHeaders('POST', path, tpBody, config);
             const tpRes = await fetch(BASE_URL + path, { method: 'POST', headers: tpHeaders, body: tpBody });
             const tpJson = await tpRes.json();
-
-            if (tpJson.code === '0') {
-                tpSuccess = true;
-                console.log(`[TPSL] New TP placed at ${finalTp}`);
-            } else {
-                throw new Error(`设置新止盈失败: ${tpJson.msg}`);
-            }
+            if (tpJson.code !== '0') throw new Error(`设置止盈失败: ${tpJson.msg}`);
         }
 
-        // Step 2: Cancel OLD Algo Orders Only After Success
-        const ordersToCancel: any[] = [];
-        
-        const isSL = (o: any) => o.slTriggerPx && parseFloat(o.slTriggerPx) > 0;
-        const isTP = (o: any) => o.tpTriggerPx && parseFloat(o.tpTriggerPx) > 0;
-
-        if (slSuccess || (finalSl && slSuccess)) { 
-            const oldSls = pendingAlgos.filter((o: any) => o.instId === instId && o.posSide === posSide && isSL(o));
-            ordersToCancel.push(...oldSls.map(o => ({ algoId: o.algoId, instId })));
-        }
-
-        if (tpSuccess || (finalTp && tpSuccess)) {
-            const oldTps = pendingAlgos.filter((o: any) => o.instId === instId && o.posSide === posSide && isTP(o));
-            ordersToCancel.push(...oldTps.map(o => ({ algoId: o.algoId, instId })));
-        }
-
-        if (ordersToCancel.length > 0) {
-            const cancelPath = "/api/v5/trade/cancel-algos";
-            const uniqueCancel = Array.from(new Set(ordersToCancel.map(a => a.algoId)))
-                .map(id => ordersToCancel.find(a => a.algoId === id));
-                
-            const cancelBody = JSON.stringify(uniqueCancel);
-            const headers = getHeaders('POST', cancelPath, cancelBody, config);
-            await fetch(BASE_URL + cancelPath, { method: 'POST', headers: headers, body: cancelBody });
-            console.log(`[TPSL] Cleaned up ${uniqueCancel.length} old algo orders.`);
-        }
-
-        return { code: "0", msg: "止盈止损安全更新成功" };
+        return { code: "0", msg: "止盈止损更新成功" };
 
     } catch (e: any) {
         console.error("Update TPSL Failed:", e);
@@ -471,7 +465,7 @@ function generateMockMarketData(): MarketDataCollection {
 function generateMockAccountData(): AccountContext {
   return {
     balance: {
-      totalEq: "15.00", 
+      totalEq: "15.00", // Start with 15U to simulate Stage 1
       availEq: "15.00",
       uTime: Date.now().toString(),
     },
