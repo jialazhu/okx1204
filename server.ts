@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -23,6 +24,7 @@ let isRunning = false;
 let marketData: MarketDataCollection | null = null;
 let accountData: AccountContext | null = null;
 let latestDecision: AIDecision | null = null;
+let decisionHistory: AIDecision[] = []; // Store history
 let logs: SystemLog[] = [];
 let lastAnalysisTime = 0;
 
@@ -55,20 +57,26 @@ const runTradingLoop = async () => {
 
     // 2. AI Analysis Logic
     const now = Date.now();
-    // Analyze every 30 seconds (0.5 minute)
-    if (now - lastAnalysisTime < 30000) return;
+    // Analyze every 15 seconds (High Frequency for Ultra-Short Term)
+    if (now - lastAnalysisTime < 15000) return;
 
     // Use setTimeout instead of setImmediate to avoid TS errors
     setTimeout(async () => {
         try {
             lastAnalysisTime = now;
-            addLog('INFO', '正在调用云端战神引擎...');
+            addLog('INFO', '正在调用云端战神引擎 (超短线模式)...');
             
             if (!marketData || !accountData) return;
 
             // Updated to use deepseekApiKey
             const decision = await aiService.getTradingDecision(config.deepseekApiKey, marketData, accountData);
+            
+            // Timestamp and Store History
+            decision.timestamp = Date.now();
             latestDecision = decision;
+            decisionHistory.unshift(decision);
+            // Keep last 1000 items in memory
+            if (decisionHistory.length > 1000) decisionHistory = decisionHistory.slice(0, 1000);
             
             const conf = decision.trading_decision?.confidence || "0%";
             addLog('INFO', `[${decision.stage_analysis.substring(0, 10)}..] 决策: ${decision.action} (置信度 ${conf})`);
@@ -155,6 +163,20 @@ app.get('/api/status', (req, res) => {
         latestDecision,
         logs
     });
+});
+
+app.get('/api/history', (req, res) => {
+    const now = Date.now();
+    // 1 Hour in milliseconds
+    const oneHour = 60 * 60 * 1000;
+    
+    // Recent 1 hour reports
+    const recent = decisionHistory.filter(d => (d.timestamp || 0) > now - oneHour);
+    
+    // Last 50 NON-HOLD reports
+    const actions = decisionHistory.filter(d => d.action !== 'HOLD').slice(0, 50);
+    
+    res.json({ recent, actions });
 });
 
 app.post('/api/config', (req, res) => {
