@@ -1,12 +1,13 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import CandleChart from './components/CandleChart';
 import SettingsModal from './components/SettingsModal';
 import HistoryModal from './components/HistoryModal';
 import DecisionReport from './components/DecisionReport';
 import { MarketDataCollection, AccountContext, AIDecision, SystemLog, AppConfig, PositionData } from './types';
-import { Settings, Play, Pause, Activity, Terminal, History, RefreshCw, Wallet, TrendingUp, AlertTriangle } from 'lucide-react';
-import { DEFAULT_CONFIG, INSTRUMENT_ID } from './constants';
+import { Settings, Play, Pause, Activity, Terminal, History, Wallet, TrendingUp, AlertTriangle, ExternalLink, ShieldCheck, Crosshair, DollarSign, Layers } from 'lucide-react';
+import { DEFAULT_CONFIG, INSTRUMENT_ID, CONTRACT_VAL_ETH } from './constants';
+import { X } from 'lucide-react';
 
 const App: React.FC = () => {
   const [marketData, setMarketData] = useState<MarketDataCollection | null>(null);
@@ -18,8 +19,7 @@ const App: React.FC = () => {
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [isFullReportOpen, setIsFullReportOpen] = useState(false);
 
   // Fetch Status
   useEffect(() => {
@@ -41,11 +41,6 @@ const App: React.FC = () => {
     const interval = setInterval(fetchStatus, 1000);
     return () => clearInterval(interval);
   }, []);
-
-  // Auto-scroll logs
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
 
   const toggleStrategy = async () => {
     try {
@@ -74,11 +69,82 @@ const App: React.FC = () => {
     }
   };
 
-  const primaryPosition: PositionData | undefined = accountData?.positions.find(p => p.instId === INSTRUMENT_ID);
+  // Helper to render a single position card
+  const renderPositionCard = (pos: PositionData) => {
+    const isLong = pos.posSide === 'long';
+    const upl = parseFloat(pos.upl);
+    const sizeEth = (parseFloat(pos.pos) * CONTRACT_VAL_ETH).toFixed(2);
+    const margin = parseFloat(pos.margin).toFixed(2);
+    
+    return (
+      <div key={pos.instId + pos.posSide} className="bg-[#121214] border border-okx-border rounded-lg p-4 shadow-sm hover:border-okx-primary/50 transition-colors">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-800">
+           <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 text-xs font-bold rounded uppercase ${isLong ? 'bg-okx-up/20 text-okx-up' : 'bg-okx-down/20 text-okx-down'}`}>
+                {pos.posSide}
+              </span>
+              <span className="font-bold text-white text-sm">{pos.instId}</span>
+              <span className="text-xs text-okx-subtext bg-gray-800 px-1.5 rounded">{pos.mgnMode}</span>
+           </div>
+           <div className={`text-sm font-mono font-bold ${upl >= 0 ? 'text-okx-up' : 'text-okx-down'}`}>
+              {upl > 0 ? '+' : ''}{upl} U
+           </div>
+        </div>
+
+        {/* Grid Stats */}
+        <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-xs">
+           <div className="space-y-1">
+              <div className="text-okx-subtext flex items-center gap-1">
+                 <Layers size={10} /> 持仓规模
+              </div>
+              <div className="text-gray-200 font-mono">
+                 {pos.pos} 张 <span className="text-gray-500">({sizeEth} ETH)</span>
+              </div>
+           </div>
+
+           <div className="space-y-1 text-right">
+              <div className="text-okx-subtext flex items-center justify-end gap-1">
+                 <DollarSign size={10} /> 保证金 (Margin)
+              </div>
+              <div className="text-gray-200 font-mono">{margin} U</div>
+           </div>
+
+           <div className="space-y-1">
+              <div className="text-okx-subtext">持仓均价 (Avg)</div>
+              <div className="text-white font-mono">{pos.avgPx}</div>
+           </div>
+
+           <div className="space-y-1 text-right">
+              <div className="text-yellow-500/90 flex items-center justify-end gap-1 font-bold">
+                 <AlertTriangle size={10} /> 盈亏平衡 (BE)
+              </div>
+              <div className="text-yellow-500 font-mono font-bold">{pos.breakEvenPx || '--'}</div>
+           </div>
+
+           <div className="col-span-2 h-px bg-gray-800/50"></div>
+
+           <div className="space-y-1">
+              <div className="text-okx-subtext flex items-center gap-1">
+                 <ShieldCheck size={10} /> 止损触发 (SL)
+              </div>
+              <div className="text-orange-400 font-mono">{pos.slTriggerPx || '未设置'}</div>
+           </div>
+
+           <div className="space-y-1 text-right">
+              <div className="text-okx-subtext flex items-center justify-end gap-1">
+                 <Crosshair size={10} /> 止盈触发 (TP)
+              </div>
+              <div className="text-green-400 font-mono">{pos.tpTriggerPx || '未设置'}</div>
+           </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="h-screen bg-okx-bg text-okx-text font-sans selection:bg-okx-primary selection:text-white flex flex-col overflow-hidden">
-      {/* Header (Fixed Height 3.5rem) */}
+      {/* Header (Fixed) */}
       <header className="h-14 shrink-0 border-b border-okx-border bg-okx-card/50 backdrop-blur-md z-40">
         <div className="max-w-[1920px] mx-auto px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -136,10 +202,10 @@ const App: React.FC = () => {
       <main className="flex-1 overflow-hidden p-4">
         <div className="max-w-[1920px] mx-auto w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-4">
         
-          {/* Left Col: Chart (65%) & Logs (35%) */}
-          <div className="lg:col-span-8 flex flex-col gap-4 h-full">
+          {/* Left Col: Chart (60%) & Logs (40%) */}
+          <div className="lg:col-span-8 flex flex-col gap-4 h-full min-h-0">
             {/* Chart Area */}
-            <div className="h-[65%] bg-okx-card rounded-xl border border-okx-border overflow-hidden relative group shadow-lg shrink-0">
+            <div className="h-[60%] bg-okx-card rounded-xl border border-okx-border overflow-hidden relative group shadow-lg shrink-0">
                {marketData?.candles15m && marketData.candles15m.length > 0 ? (
                   <CandleChart data={marketData.candles15m} />
                ) : (
@@ -148,29 +214,32 @@ const App: React.FC = () => {
                   </div>
                )}
                {/* Floating Ticker Info */}
-               <div className="absolute top-4 left-4 bg-black/60 backdrop-blur px-4 py-2 rounded-lg border border-white/10 text-xs font-mono shadow-xl">
+               <div className="absolute top-4 left-4 bg-black/60 backdrop-blur px-4 py-2 rounded-lg border border-white/10 text-xs font-mono shadow-xl pointer-events-none">
                   <div className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
                     {marketData?.ticker?.last || '0.00'}
                     <span className="text-xs font-normal text-okx-subtext px-1.5 py-0.5 bg-gray-800 rounded">USDT</span>
                   </div>
                   <div className="flex gap-4 text-gray-400">
                       <span className="flex items-center gap-1"><TrendingUp size={10}/> 24H: {marketData?.ticker?.volCcy24h ? (parseInt(marketData.ticker.volCcy24h)/1000000).toFixed(1) + 'M' : '0'}</span>
-                      <span>OI: {marketData?.openInterest ? parseInt(marketData.openInterest).toLocaleString() : '0'}</span>
                   </div>
                </div>
             </div>
 
-            {/* Logs Area - Fills remaining height */}
-            <div className="flex-1 bg-okx-card rounded-xl border border-okx-border flex flex-col shadow-lg overflow-hidden min-h-0">
-              <div className="px-4 py-2.5 border-b border-okx-border bg-okx-bg/50 flex items-center gap-2 shrink-0">
-                <Terminal size={14} className="text-okx-primary" />
-                <span className="text-xs font-bold text-okx-subtext uppercase tracking-wider">System Logs</span>
+            {/* Logs Area - Fixed Height (Remaining) */}
+            <div className="h-[40%] bg-okx-card rounded-xl border border-okx-border flex flex-col shadow-lg overflow-hidden shrink-0">
+              <div className="px-4 py-2 border-b border-okx-border bg-okx-bg/50 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <Terminal size={14} className="text-okx-primary" />
+                  <span className="text-xs font-bold text-okx-subtext uppercase tracking-wider">System Logs (Live)</span>
+                </div>
+                <div className="text-[10px] text-gray-500">倒序排列 (最新在前)</div>
               </div>
               <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1.5 custom-scrollbar bg-[#0c0c0e]">
-                {logs.length === 0 && <div className="text-okx-subtext opacity-50 italic">System initialized. Waiting for events...</div>}
-                {logs.map((log) => (
-                  <div key={log.id} className="flex gap-2 hover:bg-white/5 p-0.5 rounded leading-relaxed">
-                    <span className="text-gray-600 select-none">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                {logs.length === 0 && <div className="text-okx-subtext opacity-50 italic text-center py-4">System initialized. Waiting for events...</div>}
+                {/* Reverse logs to show newest first */}
+                {logs.slice().reverse().map((log) => (
+                  <div key={log.id} className="flex gap-2 hover:bg-white/5 p-1 rounded leading-relaxed border-b border-white/5 last:border-0">
+                    <span className="text-gray-600 select-none shrink-0 w-16">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
                     <span className={`font-bold w-16 text-center shrink-0 ${
                       log.type === 'ERROR' ? 'text-okx-down' :
                       log.type === 'SUCCESS' ? 'text-okx-up' :
@@ -181,97 +250,103 @@ const App: React.FC = () => {
                     <span className="text-gray-300 break-all">{log.message}</span>
                   </div>
                 ))}
-                <div ref={logsEndRef} />
               </div>
             </div>
           </div>
 
-          {/* Right Col: Position Info & AI (Fixed Layout) */}
-          <div className="lg:col-span-4 flex flex-col gap-4 h-full">
+          {/* Right Col: Positions (Flex) & AI Summary (Fixed Bottom) */}
+          <div className="lg:col-span-4 flex flex-col gap-4 h-full min-h-0">
              
-              {/* 1. Position Dashboard (Fixed Height) */}
-              <div className="bg-okx-card rounded-xl border border-okx-border shadow-lg shrink-0 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-okx-border bg-okx-bg/30 flex justify-between items-center">
+              {/* 1. Multi-Position Dashboard (Flex Grow) */}
+              <div className="flex-1 bg-okx-card rounded-xl border border-okx-border shadow-lg overflow-hidden flex flex-col min-h-0">
+                  <div className="px-4 py-3 border-b border-okx-border bg-okx-bg/30 flex justify-between items-center shrink-0">
                       <div className="flex items-center gap-2 font-bold text-white text-sm">
                           <Wallet size={16} className="text-blue-500"/>
-                          当前持仓 ({INSTRUMENT_ID})
+                          持仓监控 ({accountData?.positions.length || 0})
                       </div>
-                      {primaryPosition && (
-                         <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${primaryPosition.posSide === 'long' ? 'bg-okx-up/20 text-okx-up' : 'bg-okx-down/20 text-okx-down'}`}>
-                             {primaryPosition.posSide}
-                         </span>
-                      )}
                   </div>
                   
-                  <div className="p-4">
-                     {primaryPosition && parseFloat(primaryPosition.pos) > 0 ? (
-                         <div className="grid grid-cols-2 gap-4">
-                             <div className="space-y-1">
-                                 <div className="text-xs text-okx-subtext">持仓量 (张)</div>
-                                 <div className="text-lg font-mono font-bold text-white">{primaryPosition.pos}</div>
-                             </div>
-                             <div className="space-y-1 text-right">
-                                 <div className="text-xs text-okx-subtext">浮动盈亏 (UPL)</div>
-                                 <div className={`text-lg font-mono font-bold ${parseFloat(primaryPosition.upl) >= 0 ? 'text-okx-up' : 'text-okx-down'}`}>
-                                     {parseFloat(primaryPosition.upl) > 0 ? '+' : ''}{primaryPosition.upl} U
-                                 </div>
-                             </div>
-                             
-                             <div className="col-span-2 h-px bg-okx-border/50 my-1"></div>
-
-                             <div className="space-y-1">
-                                 <div className="text-xs text-okx-subtext">持仓均价 (Avg Cost)</div>
-                                 <div className="text-sm font-mono text-gray-300">{primaryPosition.avgPx}</div>
-                             </div>
-                             <div className="space-y-1 text-right">
-                                 <div className="text-xs text-okx-subtext flex items-center justify-end gap-1 text-yellow-500/80">
-                                     <AlertTriangle size={10}/> 盈亏平衡价 (BE)
-                                 </div>
-                                 <div className="text-sm font-mono text-yellow-500 font-bold">
-                                     {primaryPosition.breakEvenPx || '--'}
-                                 </div>
-                             </div>
-                         </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                     {accountData && accountData.positions.length > 0 ? (
+                         accountData.positions.map(p => renderPositionCard(p))
                      ) : (
-                         <div className="h-[105px] flex flex-col items-center justify-center text-okx-subtext opacity-40 gap-2">
-                             <Wallet size={24} />
-                             <span className="text-xs">当前无持仓 / 空仓观望</span>
+                         <div className="h-full flex flex-col items-center justify-center text-okx-subtext opacity-40 gap-2">
+                             <Wallet size={32} />
+                             <span className="text-sm">当前无持仓 / 空仓观望</span>
                          </div>
                      )}
                   </div>
               </div>
 
-              {/* 2. AI Report (Fills remaining space) */}
-              <div className="flex-1 bg-okx-card rounded-xl border border-okx-border flex flex-col overflow-hidden shadow-lg min-h-0">
-                  <div className="p-4 border-b border-okx-border bg-okx-bg/50 shrink-0">
-                      <div className="flex justify-between items-center mb-1">
-                          <h2 className="font-bold text-white flex items-center gap-2">
-                              <Activity size={18} className="text-purple-500 animate-pulse" />
-                              AI 战神推演
-                          </h2>
-                          <span className="text-xs font-mono text-okx-subtext bg-black/30 px-2 py-1 rounded">
-                              {decision?.timestamp ? new Date(decision.timestamp).toLocaleTimeString() : '--:--:--'}
-                          </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs mt-2">
-                          <span className={`px-2 py-0.5 rounded font-bold shadow-sm ${
-                              decision?.action === 'BUY' ? 'bg-okx-up/20 text-okx-up border border-okx-up/30' :
-                              decision?.action === 'SELL' ? 'bg-okx-down/20 text-okx-down border border-okx-down/30' :
-                              decision?.action === 'UPDATE_TPSL' ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30' :
-                              'bg-gray-700 text-gray-300 border border-gray-600'
-                          }`}>
-                              {decision?.action || 'WAITING'}
-                          </span>
-                          <span className="text-okx-subtext ml-auto">AI置信度: <span className="text-white font-bold">{decision?.trading_decision?.confidence || '0%'}</span></span>
-                      </div>
+              {/* 2. AI Compact Summary (Fixed Height) */}
+              <div className="h-auto bg-okx-card rounded-xl border border-okx-border flex flex-col overflow-hidden shadow-lg shrink-0">
+                  <div className="p-3 border-b border-okx-border bg-gradient-to-r from-purple-900/20 to-transparent flex justify-between items-center">
+                      <h2 className="font-bold text-white text-sm flex items-center gap-2">
+                          <Activity size={16} className="text-purple-500" />
+                          AI 决策核心
+                      </h2>
+                      <span className="text-[10px] font-mono text-gray-500">
+                          {decision?.timestamp ? new Date(decision.timestamp).toLocaleTimeString() : '--:--:--'}
+                      </span>
                   </div>
                   
-                  <div className="flex-1 overflow-hidden relative bg-[#121214]">
+                  <div className="p-4 bg-[#121214]">
                       {decision ? (
-                          <DecisionReport decision={decision} />
+                          <div className="space-y-4">
+                              {/* Top Row: Action & Confidence */}
+                              <div className="flex items-center justify-between">
+                                  <span className={`px-4 py-1.5 rounded text-sm font-bold shadow-sm tracking-wide ${
+                                      decision.action === 'BUY' ? 'bg-okx-up text-black' :
+                                      decision.action === 'SELL' ? 'bg-okx-down text-white' :
+                                      decision.action === 'UPDATE_TPSL' ? 'bg-yellow-500 text-black' :
+                                      'bg-gray-700 text-gray-300'
+                                  }`}>
+                                      {decision.action}
+                                  </span>
+                                  <div className="text-right">
+                                      <div className="text-[10px] text-okx-subtext">AI 置信度</div>
+                                      <div className="text-purple-400 font-bold font-mono">{decision.trading_decision?.confidence}</div>
+                                  </div>
+                              </div>
+
+                              {/* Execution Plan Grid */}
+                              <div className="grid grid-cols-2 gap-2 text-xs bg-black/20 p-3 rounded border border-gray-800">
+                                   <div>
+                                       <span className="text-gray-500 block">执行数量</span>
+                                       <span className="text-white font-mono font-bold">
+                                           {decision.size !== "0" ? `${decision.size} 张` : '--'}
+                                       </span>
+                                   </div>
+                                   <div className="text-right">
+                                       <span className="text-gray-500 block">建议杠杆</span>
+                                       <span className="text-yellow-500 font-mono">
+                                           {decision.leverage !== "0" ? `${decision.leverage}x` : '--'}
+                                       </span>
+                                   </div>
+                                   <div className="pt-2">
+                                       <span className="text-gray-500 block">止损价格 (SL)</span>
+                                       <span className="text-orange-400 font-mono font-bold">
+                                           {decision.trading_decision?.stop_loss || '未设定'}
+                                       </span>
+                                   </div>
+                                   <div className="text-right pt-2">
+                                       <span className="text-gray-500 block">止盈价格 (TP)</span>
+                                       <span className="text-green-500 font-mono">
+                                           {decision.trading_decision?.profit_target || '未设定'}
+                                       </span>
+                                   </div>
+                              </div>
+
+                              <button 
+                                onClick={() => setIsFullReportOpen(true)}
+                                className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-xs text-okx-subtext hover:text-white rounded border border-gray-700 transition-colors flex items-center justify-center gap-2"
+                              >
+                                  <ExternalLink size={12} /> 查看完整推演报告
+                              </button>
+                          </div>
                       ) : (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center text-okx-subtext opacity-50">
-                              <div className="animate-spin mb-4 text-okx-primary"><RefreshCw size={24} /></div>
+                          <div className="py-6 flex flex-col items-center justify-center text-okx-subtext opacity-50">
+                              <div className="animate-spin mb-2 text-okx-primary"><Activity size={20} /></div>
                               <p className="text-xs">正在连接深思引擎...</p>
                           </div>
                       )}
@@ -293,6 +368,24 @@ const App: React.FC = () => {
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
       />
+
+      {/* Full Report Modal */}
+      {isFullReportOpen && decision && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-okx-card w-full max-w-4xl max-h-[85vh] rounded-xl border border-okx-border shadow-2xl flex flex-col">
+                  <div className="p-4 border-b border-okx-border flex justify-between items-center">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                          <Activity size={20} className="text-purple-500"/> AI 完整推演报告
+                      </h3>
+                      <button onClick={() => setIsFullReportOpen(false)} className="text-okx-subtext hover:text-white">
+                          <X size={24} />
+                      </button>
+                  </div>
+                  <div className="flex-1 overflow-hidden p-0">
+                      <DecisionReport decision={decision} />
+                  </div>
+          </div>
+      )}
     </div>
   );
 };
