@@ -1,3 +1,4 @@
+
 // OKX Data Types
 export interface TickerData {
   instId: string;
@@ -32,7 +33,7 @@ export interface PositionData {
   posSide: 'long' | 'short' | 'net';
   pos: string; // Size
   avgPx: string; // Average Price
-  breakEvenPx?: string; // NEW: Exchange provided break-even price
+  breakEvenPx?: string; // NEW: Exchange provided Breakeven Price
   upl: string; // Unrealized PnL
   uplRatio: string; // PnL Ratio
   mgnMode: string; // 'isolated' or 'cross'
@@ -53,23 +54,23 @@ export interface AccountContext {
 export interface MarketDataCollection {
   ticker: TickerData | null;
   candles5m: CandleData[];
-  candles15m: CandleData[]; 
+  candles15m: CandleData[]; // Used for indicators (4H simulated by aggregating or just using 15m as proxy for short term)
   fundingRate: string;
   openInterest: string;
   orderbook: any; 
   trades: any[];
 }
 
-// AI Decision Types
+// AI Decision Types - 10U God of War Structure
 export interface AIDecision {
   stage_analysis: string;
   market_assessment: string;
-  hot_events_overview: string; 
+  hot_events_overview: string; // NEW: Real-time internet search results
   eth_analysis: string;
   trading_decision: {
-    action: 'buy' | 'sell' | 'hold' | 'close' | 'update_tpsl'; 
-    confidence: string; 
-    position_size: string; 
+    action: 'buy' | 'sell' | 'hold' | 'close' | 'update_tpsl'; // Added update_tpsl
+    confidence: string; // "0-100%"
+    position_size: string; // e.g. "5U" or "0.50" (Contracts if parsed, but raw AI output is U)
     leverage: string;
     profit_target: string;
     stop_loss: string;
@@ -78,10 +79,10 @@ export interface AIDecision {
   reasoning: string;
   
   // Internal fields added by app
-  action: 'BUY' | 'SELL' | 'HOLD' | 'CLOSE' | 'UPDATE_TPSL'; 
-  size: string; 
-  leverage: string; 
-  rollover_trigger?: string; 
+  action: 'BUY' | 'SELL' | 'HOLD' | 'CLOSE' | 'UPDATE_TPSL'; // Normalized Uppercase
+  size: string; // Calculated Contract Size for OKX
+  leverage: string; // Normalized
+  rollover_trigger?: string; // Derived or default
   timestamp?: number;
 }
 
@@ -96,6 +97,6 @@ export interface AppConfig {
   okxApiKey: string;
   okxSecretKey: string;
   okxPassphrase: string;
-  deepseekApiKey: string; 
+  deepseekApiKey: string; // Renamed from geminiApiKey
   isSimulation: boolean;
 }
