@@ -1,11 +1,10 @@
-
 import React, { useEffect, useState } from 'react';
 import CandleChart from './components/CandleChart';
 import SettingsModal from './components/SettingsModal';
 import HistoryModal from './components/HistoryModal';
 import DecisionReport from './components/DecisionReport';
 import { MarketDataCollection, AccountContext, AIDecision, SystemLog, AppConfig, PositionData } from './types';
-import { 设置, Play, Pause, Activity, Terminal, History, Wallet, TrendingUp, AlertTriangle, ExternalLink, ShieldCheck, Crosshair, DollarSign, Layers, X } from 'lucide-react';
+import { Settings, Play, Pause, Activity, Terminal, History, Wallet, TrendingUp, AlertTriangle, ExternalLink, ShieldCheck, Crosshair, DollarSign, Layers, X } from 'lucide-react';
 import { DEFAULT_CONFIG, INSTRUMENT_ID, CONTRACT_VAL_ETH } from './constants';
 
 const App: React.FC = () => {
