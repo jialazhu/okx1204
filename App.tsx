@@ -74,16 +74,28 @@ const App: React.FC = () => {
     const sizeEth = (parseFloat(pos.pos) * CONTRACT_VAL_ETH).toFixed(2);
     const margin = parseFloat(pos.margin).toFixed(2);
     const price = parseFloat(currentPriceStr || "0");
-    
-    // Calculate Net Profit (Est. Fees: Open + Close)
-    const sizeVal = parseFloat(pos.pos) * CONTRACT_VAL_ETH;
     const avgPx = parseFloat(pos.avgPx);
+    
+    // 1. Calculate Net Profit (Est. Fees: Open + Close)
+    const sizeVal = parseFloat(pos.pos) * CONTRACT_VAL_ETH;
     const openFee = sizeVal * avgPx * TAKER_FEE_RATE;
     const closeFee = sizeVal * price * TAKER_FEE_RATE;
     const netPnL = upl - (openFee + closeFee);
     
-    // Robust Breakeven Display
-    const bePx = pos.breakEvenPx && parseFloat(pos.breakEvenPx) > 0 ? pos.breakEvenPx : '--';
+    // 2. Robust Breakeven Display (Exchange Data -> Fallback Calc)
+    let bePxVal = parseFloat(pos.breakEvenPx || "0");
+    let isEstimated = false;
+
+    if (bePxVal <= 0 && avgPx > 0) {
+        // Fallback: Calculate Breakeven locally if exchange doesn't provide it
+        isEstimated = true;
+        if (isLong) {
+            bePxVal = avgPx * (1 + TAKER_FEE_RATE) / (1 - TAKER_FEE_RATE);
+        } else {
+            bePxVal = avgPx * (1 - TAKER_FEE_RATE) / (1 + TAKER_FEE_RATE);
+        }
+    }
+    const bePxStr = bePxVal > 0 ? bePxVal.toFixed(2) : '--';
 
     return (
       <div key={pos.instId + pos.posSide} className="bg-[#121214] border border-okx-border rounded-lg p-4 shadow-sm hover:border-okx-primary/50 transition-colors">
@@ -132,10 +144,12 @@ const App: React.FC = () => {
 
            {/* Row 3: BE & Net Profit */}
            <div className="space-y-1">
-              <div className="text-yellow-500/90 flex items-center gap-1 font-bold">
+              <div className="text-yellow-500/90 flex items-center gap-1 font-bold" title={isEstimated ? "本地估算值" : "交易所数据"}>
                  <AlertTriangle size={10} /> 盈亏平衡 (BE)
               </div>
-              <div className="text-yellow-500 font-mono font-bold">{bePx}</div>
+              <div className="text-yellow-500 font-mono font-bold">
+                  {bePxStr} {isEstimated && <span className="text-[9px] font-normal opacity-70">*</span>}
+              </div>
            </div>
            <div className="space-y-1 text-right">
               <div className="text-okx-subtext flex items-center justify-end gap-1 font-bold">
