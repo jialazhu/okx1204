@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Settings, Play, Pause, RefreshCw, Activity, Zap, TrendingUp, AlertCircle, Terminal, Shield, Target, Brain, X, Eye, Flame, Cloud } from 'lucide-react';
 import { MarketDataCollection, AccountContext, AIDecision, SystemLog, AppConfig } from './types';
@@ -22,7 +23,6 @@ const App: React.FC = () => {
     try {
         const res = await fetch('/api/status');
         
-        // Handle non-200 responses or HTML/text responses
         if (!res.ok) {
            return; 
         }
@@ -34,12 +34,12 @@ const App: React.FC = () => {
             setMarketData(data.marketData);
             setAccountData(data.accountData);
             setLatestDecision(data.latestDecision);
-            setLogs(data.logs); // Sync logs from server
+            setLogs(data.logs); 
         } catch (parseError) {
-             // Ignore parse errors
+             // Ignore
         }
     } catch (e) {
-        // Ignore network errors
+        // Ignore
     }
   }, []);
 
@@ -116,7 +116,7 @@ const App: React.FC = () => {
           </button>
           
           <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-okx-subtext hover:text-white">
-            <Settings size={20} />
+            <设置size={20} />
           </button>
         </div>
       </header>
@@ -214,12 +214,13 @@ const App: React.FC = () => {
         </div>
 
         {/* MIDDLE COLUMN: CHART */}
-        <div className="col-span-12 lg:col-span-6 h-[500px] lg:h-auto bg-okx-card border border-okx-border rounded-xl p-4 flex flex-col">
+        {/* Fixed height to prevent page stretching/pulling as per user request */}
+        <div className="col-span-12 lg:col-span-6 h-[500px] bg-okx-card border border-okx-border rounded-xl p-1 flex flex-col overflow-hidden">
            <CandleChart data={marketData?.candles15m || []} />
         </div>
 
         {/* RIGHT COLUMN: STRATEGY */}
-        <div className="col-span-12 lg:col-span-3 flex flex-col gap-4 h-[600px] lg:h-auto">
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-4 h-[500px] lg:h-auto">
            {/* Strategy Status */}
            <div className="bg-gradient-to-b from-gray-800 to-okx-card border border-okx-border rounded-xl p-5 flex flex-col">
               <div className="flex items-center gap-2 text-purple-400 font-bold mb-3">
@@ -276,8 +277,8 @@ const App: React.FC = () => {
               )}
            </div>
 
-           {/* Logs - Reversed Order (Newest First) */}
-           <div className="flex-1 bg-black/40 border border-okx-border rounded-xl p-4 overflow-hidden flex flex-col">
+           {/* Logs */}
+           <div className="flex-1 bg-black/40 border border-okx-border rounded-xl p-4 overflow-hidden flex flex-col max-h-[300px] lg:max-h-none">
              <div className="flex items-center gap-2 mb-2 text-okx-subtext text-xs uppercase tracking-wider font-semibold">
                 <Terminal size={12} /> 云端战地日志
              </div>
