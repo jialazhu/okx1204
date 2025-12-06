@@ -358,14 +358,13 @@ ${positionContext}
 
 **核心决策九大军规 (The 9 Commandments)**:
 
-1. **本金保护与耐心 (Ratchet & Patience)**:
-   - 使用 **棘轮机制** 移动止损：止损价严禁回撤。
-   - **关键调整**：在【净利润 < 0】的亏损/回本途中，**严禁激进上调止损**。
-   - 除非出现极强的结构性支撑，否则不要因为微小的价格反弹就紧跟移动止损，这会导致在达到盈亏平衡前被市场噪音震荡出局。
+1. **本金保护 (Capital Protection)**:
+   - 使用 **棘轮机制 (Ratchet)** 移动止损：止损价 **只能向利润更高的方向移动**，严禁回调。
+   - 如 Long: New SL >= Old SL。如 Short: New SL <= Old SL。
 
 2. **锁定利润 (Lock-in Profit)**:
-   - 只有当【净利润 (Net PnL) > 0】且价格明显脱离成本区后，才迅速将 SL 移动到 **Breakeven Price** 之上。
-   - 此时才是“零风险博弈”的开始，此前应以“生存”为主，容忍合理波动。
+   - 当【净利润 (Net PnL) > 0】且价格脱离成本区时，必须将 SL 移动到 **Breakeven Price** 之上。
+   - 这是优先级最高的任务：先保证不亏，再追求盈利。
 
 3. **趋势上限探索 (Trend Exploration)**:
    - **不要设置硬止盈 (TP)** 限制收益上限，除非遇到极强阻力。
@@ -384,13 +383,13 @@ ${positionContext}
 6. **核心目标**:
    - 一切决策以 **净利润 (Net Profit)** 为核心。净利润 = 浮盈 - 双边手续费。
 
-7. **盈亏平衡前的呼吸空间 (Pre-Breakeven Buffer)**:
-   - 在价格未达到 Breakeven Price 之前，**给予市场充分的波动空间**。
-   - 不要为了减少那一点点潜在亏损而频繁操作 SL。在这个阶段，SL 应保持在初始逻辑失效点（Invaldiation Level），而不是跟随价格移动。
+7. **波动容忍 (Volatility Filter)**:
+   - 在寻找调整 SL 时机时（尤其是浮亏阶段），允许一定程度的 "呼吸空间" (Technical Stop)，以免被微小噪音扫损。
+   - 但一旦进入盈利区，容忍度应迅速收紧。
 
 8. **锚点战术 (Anchor Point)**:
    - 交易所的 **Breakeven Price** 是最重要的战场分界线。
-   - 你的战术路径：忍受波动 -> 触达 Breakeven -> 迅速将 SL 移至 Breakeven 之上 -> 开启无限追利模式。
+   - 你的首要战术动作：确保 SL 尽快跨越 Breakeven 线。
 
 9. **AI 动态风控**:
    - 一旦实现盈亏平衡 (SL > Breakeven)，由你根据 **市场热点(基于提供的互联网情报)**、技术指标全权接管 SL 的移动节奏，最大化捕捉利润。
@@ -477,16 +476,41 @@ ${positionContext}
         const isAdding = hasPosition; // DCA or Pyramiding
         const riskFactor = isAdding ? 0.3 : currentStageParams.risk_factor; // 加仓动作风险系数较低
 
+        // 1. Determine Target Contracts from AI or Algo
+        let targetContracts = 0;
         if (!decision.trading_decision.position_size || decision.trading_decision.position_size === "0") {
              const confidence = parseFloat(decision.trading_decision.confidence) || 50;
              const marginToUse = availableEquity * riskFactor * (confidence / 100);
              const posValue = marginToUse * safeLeverage;
-             const contracts = posValue / (CONTRACT_VAL_ETH * currentPrice);
-             decision.size = Math.max(contracts, 0.01).toFixed(2);
+             targetContracts = posValue / (CONTRACT_VAL_ETH * currentPrice);
         } else {
-             decision.size = decision.trading_decision.position_size;
+             targetContracts = parseFloat(decision.trading_decision.position_size);
         }
+
+        // 2. Calculate Max Available Contracts (Safety Check)
+        // Max Margin = availableEquity * 0.95 (reserve 5% for fees/slippage/volatility)
+        // Max Position Value = Max Margin * Leverage
+        const maxMargin = availableEquity * 0.95;
+        const maxPosValue = maxMargin * safeLeverage;
+        const maxContracts = maxPosValue / (CONTRACT_VAL_ETH * currentPrice);
+
+        // 3. Cap Size
+        if (targetContracts > maxContracts) {
+            console.warn(`[Risk Control] AI suggested size ${targetContracts.toFixed(2)} exceeds balance. Capped at ${maxContracts.toFixed(2)}`);
+            decision.reasoning += ` [资金管控: 仓位限制在余额允许范围内 ${maxContracts.toFixed(2)}张]`;
+            targetContracts = maxContracts;
+        }
+
+        decision.size = Math.max(targetContracts, 0.01).toFixed(2);
         decision.leverage = safeLeverage.toString();
+
+        // Final check: if calculated size is still effectively 0 or invalid given min size constraints vs balance
+        if (parseFloat(decision.size) < 0.01) {
+             console.warn("[Risk Control] Insufficient balance for minimum order size. Forcing HOLD.");
+             decision.action = 'HOLD';
+             decision.size = "0";
+             decision.reasoning += " [系统拦截: 账户余额不足以开出最小仓位]";
+        }
     } else {
         decision.size = "0";
         decision.leverage = safeLeverage.toString();
