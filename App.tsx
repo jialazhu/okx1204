@@ -24,13 +24,27 @@ const App: React.FC = () => {
     const fetchStatus = async () => {
       try {
         const res = await fetch('/api/status');
-        const data = await res.json();
-        setMarketData(data.marketData);
-        setAccountData(data.accountData);
-        setDecision(data.latestDecision);
-        setLogs(data.logs);
-        setIsRunning(data.isRunning);
-        setConfig(data.config);
+        
+        if (!res.ok) {
+           return;
+        }
+
+        const text = await res.text();
+        if (!text) return;
+
+        try {
+            const data = JSON.parse(text);
+            if (data) {
+                setMarketData(data.marketData);
+                setAccountData(data.accountData);
+                setDecision(data.latestDecision);
+                setLogs(data.logs || []);
+                setIsRunning(data.isRunning);
+                setConfig(data.config);
+            }
+        } catch (parseError) {
+            console.error("JSON Parse Error:", parseError);
+        }
       } catch (e) {
         console.error("Fetch status failed", e);
       }
@@ -237,14 +251,14 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content (Fixed Layout) */}
-      <main className="flex-1 overflow-hidden p-4">
-        <div className="max-w-[1920px] mx-auto w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-4">
+      {/* Main Content (Responsive Layout) */}
+      <main className="flex-1 overflow-y-auto lg:overflow-hidden p-4">
+        <div className="max-w-[1920px] mx-auto w-full lg:h-full h-auto grid grid-cols-1 lg:grid-cols-12 gap-4">
         
           {/* Left Col: Chart (60%) & Logs (40%) */}
-          <div className="lg:col-span-8 flex flex-col gap-4 h-full min-h-0">
+          <div className="lg:col-span-8 flex flex-col gap-4 lg:h-full h-auto min-h-0">
             {/* Chart Area */}
-            <div className="h-[60%] bg-okx-card rounded-xl border border-okx-border overflow-hidden relative group shadow-lg shrink-0">
+            <div className="lg:h-[60%] h-[400px] bg-okx-card rounded-xl border border-okx-border overflow-hidden relative group shadow-lg shrink-0">
                {marketData?.candles15m && marketData.candles15m.length > 0 ? (
                   <CandleChart data={marketData.candles15m} />
                ) : (
@@ -265,7 +279,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Logs Area - Fixed Height (Remaining) */}
-            <div className="h-[40%] bg-okx-card rounded-xl border border-okx-border flex flex-col shadow-lg overflow-hidden shrink-0">
+            <div className="lg:h-[40%] h-[300px] bg-okx-card rounded-xl border border-okx-border flex flex-col shadow-lg overflow-hidden shrink-0">
               <div className="px-4 py-2 border-b border-okx-border bg-okx-bg/50 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <Terminal size={14} className="text-okx-primary" />
@@ -294,10 +308,10 @@ const App: React.FC = () => {
           </div>
 
           {/* Right Col: Positions (Flex) & AI Summary (Fixed Bottom) */}
-          <div className="lg:col-span-4 flex flex-col gap-4 h-full min-h-0">
+          <div className="lg:col-span-4 flex flex-col gap-4 lg:h-full h-auto min-h-0">
              
               {/* 1. Multi-Position Dashboard (Flex Grow) */}
-              <div className="flex-1 bg-okx-card rounded-xl border border-okx-border shadow-lg overflow-hidden flex flex-col min-h-0">
+              <div className="lg:flex-1 h-[400px] bg-okx-card rounded-xl border border-okx-border shadow-lg overflow-hidden flex flex-col min-h-0">
                   <div className="px-4 py-3 border-b border-okx-border bg-okx-bg/30 flex justify-between items-center shrink-0">
                       <div className="flex items-center gap-2 font-bold text-white text-sm">
                           <Wallet size={16} className="text-blue-500"/>
@@ -420,7 +434,7 @@ const App: React.FC = () => {
                           <X size={24} />
                       </button>
                   </div>
-                  <div className="flex-1 overflow-hidden p-0">
+                  <div className="flex-1 overflow-hidden p-0 min-h-0">
                       <DecisionReport decision={decision} />
                   </div>
               </div>
