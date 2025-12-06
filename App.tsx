@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import CandleChart from './components/CandleChart';
 import SettingsModal from './components/SettingsModal';
@@ -6,7 +5,7 @@ import HistoryModal from './components/HistoryModal';
 import DecisionReport from './components/DecisionReport';
 import { MarketDataCollection, AccountContext, AIDecision, SystemLog, AppConfig, PositionData } from './types';
 import { Settings, Play, Pause, Activity, Terminal, History, Wallet, TrendingUp, AlertTriangle, ExternalLink, ShieldCheck, Crosshair, DollarSign, Layers, X } from 'lucide-react';
-import { DEFAULT_CONFIG, INSTRUMENT_ID, CONTRACT_VAL_ETH } from './constants';
+import { DEFAULT_CONFIG, INSTRUMENT_ID, CONTRACT_VAL_ETH, TAKER_FEE_RATE } from './constants';
 
 const App: React.FC = () => {
   const [marketData, setMarketData] = useState<MarketDataCollection | null>(null);
@@ -69,12 +68,23 @@ const App: React.FC = () => {
   };
 
   // Helper to render a single position card
-  const renderPositionCard = (pos: PositionData) => {
+  const renderPositionCard = (pos: PositionData, currentPriceStr: string) => {
     const isLong = pos.posSide === 'long';
     const upl = parseFloat(pos.upl);
     const sizeEth = (parseFloat(pos.pos) * CONTRACT_VAL_ETH).toFixed(2);
     const margin = parseFloat(pos.margin).toFixed(2);
+    const price = parseFloat(currentPriceStr || "0");
     
+    // Calculate Net Profit (Est. Fees: Open + Close)
+    const sizeVal = parseFloat(pos.pos) * CONTRACT_VAL_ETH;
+    const avgPx = parseFloat(pos.avgPx);
+    const openFee = sizeVal * avgPx * TAKER_FEE_RATE;
+    const closeFee = sizeVal * price * TAKER_FEE_RATE;
+    const netPnL = upl - (openFee + closeFee);
+    
+    // Robust Breakeven Display
+    const bePx = pos.breakEvenPx && parseFloat(pos.breakEvenPx) > 0 ? pos.breakEvenPx : '--';
+
     return (
       <div key={pos.instId + pos.posSide} className="bg-[#121214] border border-okx-border rounded-lg p-4 shadow-sm hover:border-okx-primary/50 transition-colors">
         {/* Header */}
@@ -92,7 +102,9 @@ const App: React.FC = () => {
         </div>
 
         {/* Grid Stats */}
-        <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-xs">
+        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs">
+           
+           {/* Row 1: Size & Margin */}
            <div className="space-y-1">
               <div className="text-okx-subtext flex items-center gap-1">
                  <Layers size={10} /> 持仓规模
@@ -101,7 +113,6 @@ const App: React.FC = () => {
                  {pos.pos} 张 <span className="text-gray-500">({sizeEth} ETH)</span>
               </div>
            </div>
-
            <div className="space-y-1 text-right">
               <div className="text-okx-subtext flex items-center justify-end gap-1">
                  <DollarSign size={10} /> 保证金 (Margin)
@@ -109,20 +120,35 @@ const App: React.FC = () => {
               <div className="text-gray-200 font-mono">{margin} U</div>
            </div>
 
+           {/* Row 2: Avg & Last Price */}
            <div className="space-y-1">
               <div className="text-okx-subtext">持仓均价 (Avg)</div>
               <div className="text-white font-mono">{pos.avgPx}</div>
            </div>
-
            <div className="space-y-1 text-right">
-              <div className="text-yellow-500/90 flex items-center justify-end gap-1 font-bold">
-                 <AlertTriangle size={10} /> 盈亏平衡 (BE)
-              </div>
-              <div className="text-yellow-500 font-mono font-bold">{pos.breakEvenPx || '--'}</div>
+              <div className="text-okx-subtext text-blue-400">最新市价 (Last)</div>
+              <div className="text-blue-400 font-mono font-bold">{price.toFixed(2)}</div>
            </div>
 
-           <div className="col-span-2 h-px bg-gray-800/50"></div>
+           {/* Row 3: BE & Net Profit */}
+           <div className="space-y-1">
+              <div className="text-yellow-500/90 flex items-center gap-1 font-bold">
+                 <AlertTriangle size={10} /> 盈亏平衡 (BE)
+              </div>
+              <div className="text-yellow-500 font-mono font-bold">{bePx}</div>
+           </div>
+           <div className="space-y-1 text-right">
+              <div className="text-okx-subtext flex items-center justify-end gap-1 font-bold">
+                 <TrendingUp size={10} /> 净利润 (Net)
+              </div>
+              <div className={`font-mono font-bold ${netPnL >= 0 ? 'text-okx-up' : 'text-okx-down'}`}>
+                 {netPnL > 0 ? '+' : ''}{netPnL.toFixed(2)} U
+              </div>
+           </div>
 
+           <div className="col-span-2 h-px bg-gray-800/50 my-1"></div>
+
+           {/* Row 4: SL & TP */}
            <div className="space-y-1">
               <div className="text-okx-subtext flex items-center gap-1">
                  <ShieldCheck size={10} /> 止损触发 (SL)
@@ -267,7 +293,7 @@ const App: React.FC = () => {
                   
                   <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                      {accountData && accountData.positions.length > 0 ? (
-                         accountData.positions.map(p => renderPositionCard(p))
+                         accountData.positions.map(p => renderPositionCard(p, marketData?.ticker?.last || "0"))
                      ) : (
                          <div className="h-full flex flex-col items-center justify-center text-okx-subtext opacity-40 gap-2">
                              <Wallet size={32} />
